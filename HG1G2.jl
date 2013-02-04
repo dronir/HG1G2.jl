@@ -43,7 +43,7 @@ function SplineFunction(x::Real, spline::Spline)
 end
 
 type PieceWiseFunction
-	N::Int64
+	n_components::Int64
 	limits::Matrix{Float64}
 	functions::Array{Function}
 end
@@ -52,28 +52,30 @@ end
 PieceWiseFunction() = PieceWiseFunction(0, zeros(1,2), Function[])
 
 # Push a new component to piecewise function
+# TODO: check overlaps and continuity
 function add_component!(F::PieceWiseFunction, f::Function, low::Real, hi::Real)
-	if F.N == 0
+	if F.n_components == 0
 		F.limits[1,1] = low
 		F.limits[1,2] = hi
 	else
-		F.limits = vcat(F.limits, [low, hi]') #' close parenthesis, syntax colour bug
+		F.limits = vcat(F.limits, [low, hi]') #' syntax colour bug
 	end
 	push!(F.functions, f)
-	F.N += 1
+	F.n_components += 1
 end
 
 # Get value of piecewise function at x
 function get_value(F::PieceWiseFunction, x::Real)
-	j = 0
-	n = F.N
-	low = F.limits[1,1]
-	hi = F.limits[n,2]
-	if !(low < x <= hi)
-		error("Value $x outside of allowed range ($low, $hi).") 
+	if F.n_components == 0
+		error("Piecewise function has no components defined yet!")
 	end
-	for j = 1:n
-		if F.limits[j,1] < x <= F.limits[j,2] break end
+	j = 0
+	for j = 1:F.n_components
+		if F.limits[j,1] <= x <= F.limits[j,2] break end
+	end
+	if j==0
+		println("Warning: Value $x outside ranges of piecewise function!") 
+		return NaN
 	end
 	return F.functions[j](x)
 end
