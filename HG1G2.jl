@@ -4,7 +4,7 @@ using Splines
 using PiecewiseFunctions
 using HG1G2conversions
 
-export default_basis
+export default_basis, fit_HG1G2, fitted_curve
 
 # Radian and degree conversion functions
 rad{T<:Real}(x::Union(T,Array{T})) = 0.0174532925199433.*x
@@ -25,7 +25,7 @@ function default_basis()
     basis_functions = Array(PiecewiseFunction, 3)
     
     # Construct linear part of a1
-    a1_linear(x::Real) = -1.90985931710274*x + 1.0
+    a1_linear(x::Real) = 1.0 - 1.90985931710274*x
     
     # Construct spline part of a1
     xvalues = rad([7.5, 30, 60, 90, 120, 150])
@@ -39,7 +39,7 @@ function default_basis()
     add_component!(basis_functions[1], a1_spline, rad(7.5), rad(150))
     
     # Construct linear part of a2
-    a2_linear(x::Real) = -0.572957795130823*x + 1.0
+    a2_linear(x::Real) = 1.0 - 0.572957795130823*x
     
     # Construct spline part of a2
     xvalues = rad([7.5, 30, 60, 90, 120, 150])
@@ -64,11 +64,47 @@ function default_basis()
     a3_spline(x::Real) = SplineFunction(x, S3)
     
     basis_functions[3] = PiecewiseFunction()
-    add_component!(basis_functions[3], a3_constant, rad(30), rad(150))
     add_component!(basis_functions[3], a3_spline, 0.0, rad(30))
+    add_component!(basis_functions[3], a3_constant, rad(30), rad(150))
     return basis_functions
 end
 
+function fit_HG1G2{T<:Real}(data::Matrix{T}, basis::Vector{PiecewiseFunction}, x_in_degrees::Bool)
+    Ndata = size(data,1)
+    xvalues = vec(data[:,1])
+    yvalues = 10 .^(-0.4 * vec(data[:,2]))
+    
+    if x_in_degrees
+        xvalues = rad(xvalues)
+    end
+    
+    x = 10^(0.4 * 0.03) - 1
+    weights = 1 / (yvalues .* x)
+    
+    Nfuncs = size(basis,1)
+    Xmatrix = zeros(Ndata, Nfuncs)
+    for i = 1:Ndata
+        for j = 1:Nfuncs
+            Xmatrix[i,j] = get_value(basis[j], xvalues[i]) * weights[i]
+        end
+    end
+    
+    as = Xmatrix \ (yvalues .* weights)
+end
+
+fit_HG1G2{T<:Real}(data::Matrix{T}, basis::Vector{PiecewiseFunction}) = fit_HG1G2(data,basis,false)
+
+
+function fitted_curve(T, params, basis)
+    H = params[1]
+    G1 = params[2]
+    G2 = params[3]
+    V0 = 10^(-0.4*H)
+    Y1 = G1 * get_value(basis[1], T)
+    Y2 = G2 * get_value(basis[2], T)
+    Y3 = (1-G1-G2) * get_value(basis[3], T)
+    return H - log(10, Y1 + Y2 + Y3) / 0.4
+end
 
 
 
