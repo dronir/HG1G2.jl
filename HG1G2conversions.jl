@@ -5,10 +5,10 @@ export a1a2a3_to_HG1G2, a1a2_to_HG12, a1a2_to_HG1G2, HG1G2_to_a1a2a3, HG12_to_a1
 # Linear parameters (a1, a2, a3) to (H, G1, G2).
 function a1a2a3_to_HG1G2{T<:Real}(params::Vector{T})
 	res = zeros(Float64, 3)
-	x = params[1] + params[2] + params[3]
+	x = sum(params)
 	res[1] = -2.5 * log(10, x)
-	res[2] = res[1] / x
-	res[3] = res[2] / x
+	res[2] = params[1] / x
+	res[3] = params[2] / x
 	return res
 end
 
