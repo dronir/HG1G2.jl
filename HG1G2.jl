@@ -69,30 +69,28 @@ function default_basis()
     return basis_functions
 end
 
-function fit_HG1G2{T<:Real}(data::Matrix{T}, basis::Vector{PiecewiseFunction}, x_in_degrees::Bool)
+
+function fit_HG1G2{T<:Real}(basis::Vector{PiecewiseFunction}, data::Matrix{T}, errors::Vector{T})
     Ndata = size(data,1)
     xvalues = vec(data[:,1])
     yvalues = 10 .^(-0.4 * vec(data[:,2]))
     
-    if x_in_degrees
-        xvalues = rad(xvalues)
-    end
-    
-    x = 10^(0.4 * 0.03) - 1
-    weights = 1 / (yvalues .* x)
+    x = 10.^(0.4 * errors) - 1
+    W = 1 / (yvalues .* x)
     
     Nfuncs = size(basis,1)
     Xmatrix = zeros(Ndata, Nfuncs)
     for i = 1:Ndata
         for j = 1:Nfuncs
-            Xmatrix[i,j] = get_value(basis[j], xvalues[i]) * weights[i]
+            Xmatrix[i,j] = get_value(basis[j], xvalues[i]) * W[i]
         end
     end
     
-    as = Xmatrix \ (yvalues .* weights)
+    as = Xmatrix \ (yvalues .* W)
+    return a1a2a3_to_HG1G2(as)
 end
 
-fit_HG1G2{T<:Real}(data::Matrix{T}, basis::Vector{PiecewiseFunction}) = fit_HG1G2(data,basis,false)
+fit_HG1G2{T<:Real}(basis::Vector{PiecewiseFunction}, data::Matrix{T}) = fit_HG1G2(basis,data,0.03*ones(size(data,1)))
 
 
 function fitted_curve(T, params, basis)
