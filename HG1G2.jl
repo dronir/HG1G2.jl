@@ -4,15 +4,25 @@ using Splines
 using PiecewiseFunctions
 using HG1G2conversions
 
-export default_basis, fit_HG1G2, fitted_curve
+export BasisFunctions
+export form_base, fit_HG1G2, fitted_curve
 
 # Radian and degree conversion functions
 rad{T<:Real}(x::Union(T,Array{T})) = 0.0174532925199433.*x
 deg{T<:Real}(x::Union(T,Array{T})) = 57.2957795130823.*x
 
+type BasisFunctions
+    funcs::Array{PiecewiseFunction}
+    version::Int64
+    lower::Float64
+    upper::Float64
+end
 
 
-function default_basis()
+
+form_base(filename::String) = error("Not implemented yet.")
+
+function form_base()
     basis_functions = Array(PiecewiseFunction, 3)
     
     # Construct linear part of a1
@@ -54,14 +64,18 @@ function default_basis()
     S3 = Spline(xvalues, yvalues, deriv)
     a3_spline(x::Real) = SplineFunction(x, S3)
     
+    println(S1)
+    println(S2)
+    println(S3)
+    
     basis_functions[3] = PiecewiseFunction()
     add_component!(basis_functions[3], a3_spline, 0.0, rad(30))
     add_component!(basis_functions[3], a3_constant, rad(30), rad(150))
-    return basis_functions
+    BasisFunctions(basis_functions, 20101000, 0.0, rad(150))
 end
 
 
-function fit_HG1G2{T<:Real}(basis::Vector{PiecewiseFunction}, data::Matrix{T}, errors::Vector{T})
+function fit_HG1G2{T<:Real}(basis::BasisFunctions, data::Matrix{T}, errors::Vector{T})
     Ndata = size(data,1)
     xvalues = vec(data[:,1])
     yvalues = 10 .^(-0.4 * vec(data[:,2]))
@@ -69,11 +83,11 @@ function fit_HG1G2{T<:Real}(basis::Vector{PiecewiseFunction}, data::Matrix{T}, e
     x = 10.^(0.4 * errors) - 1
     W = 1 / (yvalues .* x)
     
-    Nfuncs = size(basis,1)
+    Nfuncs = size(basis.funcs,1)
     Xmatrix = zeros(Ndata, Nfuncs)
     for i = 1:Ndata
         for j = 1:Nfuncs
-            Xmatrix[i,j] = get_value(basis[j], xvalues[i]) * W[i]
+            Xmatrix[i,j] = get_value(basis.funcs[j], xvalues[i]) * W[i]
         end
     end
     
@@ -94,7 +108,6 @@ function fitted_curve(T, params, basis)
     Y3 = (1-G1-G2) * get_value(basis[3], T)
     return H - log(10, Y1 + Y2 + Y3) / 0.4
 end
-
 
 
 end #module
