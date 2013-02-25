@@ -10,15 +10,6 @@ export default_basis, fit_HG1G2, fitted_curve
 rad{T<:Real}(x::Union(T,Array{T})) = 0.0174532925199433.*x
 deg{T<:Real}(x::Union(T,Array{T})) = 57.2957795130823.*x
 
-# Constants
-const COEF_G1_SMALL = 0.7527
-const CONST_G1_SMALL = 0.06164
-const COEF_G2_SMALL = 0.9529
-const CONST_G2_SMALL = 0.02162
-const COEF_G1_LARGE = -0.9612
-const CONST_G1_LARGE = 0.6270
-const COEF_G2_LARGE = -0.6125
-const CONST_G2_LARGE = 0.5572
 
 
 function default_basis()

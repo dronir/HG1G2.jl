@@ -1,6 +1,18 @@
 module HG1G2conversions
 
 export a1a2a3_to_HG1G2, a1a2_to_HG12, a1a2_to_HG1G2, HG1G2_to_a1a2a3, HG12_to_a1a2
+export COEF_G1_SMALL, COEF_G2_SMALL, COEF_G1_LARGE, COEF_G2_LARGE
+export CONST_G1_SMALL, CONST_G2_SMALL, CONST_G1_LARGE, CONST_G2_LARGE
+
+# Constants
+const COEF_G1_SMALL = 0.7527
+const CONST_G1_SMALL = 0.06164
+const COEF_G2_SMALL = 0.9529
+const CONST_G2_SMALL = 0.02162
+const COEF_G1_LARGE = -0.9612
+const CONST_G1_LARGE = 0.6270
+const COEF_G2_LARGE = -0.6125
+const CONST_G2_LARGE = 0.5572
 
 # Linear parameters (a1, a2, a3) to (H, G1, G2).
 function a1a2a3_to_HG1G2{T<:Real}(params::Vector{T})
