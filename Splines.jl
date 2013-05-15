@@ -30,7 +30,7 @@ function Spline(xval::Vector{Float64}, yval::Vector{Float64}, deriv::Vector{Floa
     end
     R[N] = deriv[2] * (xval[N] - xval[N-1])
     
-    # Trilinear solver
+    # tri-diagonal solver
     beta = B[1]
     U[1] = R[1]/beta
     for i = 2:N
