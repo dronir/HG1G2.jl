@@ -1,12 +1,21 @@
 ! Fortran 2003 implementation of H,G1,G2 tools
 !
 ! Can be compiled with, at least, gfortran verion 4.7 using
-! options -std=f2003 -ffree-form
+! options -std=f2003 -ffree-form -cpp
+! You can also define debug level (1 or 2) by using -D DEBUG or -D DEBUG=2
 !
 ! Antti Penttilä, 2012
 ! Department of Physics, University of Helsinki
 ! see http://wiki.helsinki.fi/display/PSR/HG1G2+tools
 !
+! version 2012-11-01
+
+#ifdef DEBUG
+#define DB_LEVEL DEBUG
+#else
+#define DB_LEVEL 0
+#endif
+
 MODULE HG1G2tools
   IMPLICIT NONE
   
@@ -47,8 +56,8 @@ MODULE HG1G2tools
   
   TYPE spline_type
     INTEGER :: n_knots
-    REAL(dbl), DIMENSION(:), ALLOCATABLE :: knots
-    REAL(dbl), DIMENSION(:,:), ALLOCATABLE :: coef
+    REAL(dbl), DIMENSION(:,:), ALLOCATABLE :: knots
+    REAL(dbl), DIMENSION(:), ALLOCATABLE :: derivs
   END TYPE spline_type
   
   TYPE generic_func_type
@@ -122,7 +131,7 @@ SUBROUTINE form_base_default(OP_STAT)
   base(1)%funcs(2)%high_limit = 150.0_dbl * degree
   n = 6
   base(1)%funcs(2)%spline%n_knots = n
-  ALLOCATE(base(1)%funcs(2)%spline%knots(n), base(1)%funcs(2)%spline%coef(n-1,4), STAT=statcode)
+  ALLOCATE(base(1)%funcs(2)%spline%knots(n,2), base(1)%funcs(2)%spline%derivs(n), STAT=statcode)
   IF(statcode /= 0) THEN
     last_error%code = ECODE_ALLOCATION
     last_error%msg = ESTR_ALLOCATION
@@ -162,7 +171,7 @@ SUBROUTINE form_base_default(OP_STAT)
   base(2)%funcs(2)%high_limit = 150.0_dbl * degree
   n = 6
   base(2)%funcs(2)%spline%n_knots = n
-  ALLOCATE(base(2)%funcs(2)%spline%knots(n), base(2)%funcs(2)%spline%coef(n-1,4), STAT=statcode)
+  ALLOCATE(base(2)%funcs(2)%spline%knots(n,2), base(2)%funcs(2)%spline%derivs(n), STAT=statcode)
   IF(statcode /= 0) THEN
     last_error%code = ECODE_ALLOCATION
     last_error%msg = ESTR_ALLOCATION
@@ -201,7 +210,7 @@ SUBROUTINE form_base_default(OP_STAT)
   base(3)%funcs(1)%high_limit = 30.0_dbl * degree
   n = 9
   base(3)%funcs(1)%spline%n_knots = n
-  ALLOCATE(base(3)%funcs(1)%spline%knots(n), base(3)%funcs(1)%spline%coef(n-1,4), STAT=statcode)
+  ALLOCATE(base(3)%funcs(1)%spline%knots(n,2), base(3)%funcs(1)%spline%derivs(n), STAT=statcode)
   IF(statcode /= 0) THEN
     last_error%code = ECODE_ALLOCATION
     last_error%msg = ESTR_ALLOCATION
@@ -279,21 +288,28 @@ FUNCTION fit_HG1G2(d, DEGR, WEIGHTED, RMS, COVMAT, OP_STAT) RESULT(params)
 
   yvec(:) = 10.0_dbl**(-0.4_dbl * d(:,2))
   
+  ! Weights still without y at this point
   IF(PRESENT(WEIGHTED)) THEN
     IF(SIZE(d,2) == 3) THEN
       ! If data includes errors in magnitude space, always use these.
       ! Change to flux space
-      wvec(:) = 1.0_dbl/(yvec(:)*(10**(0.4_dbl*d(:,3))-1.0_dbl))
+      wvec(:) = 1.0_dbl/(10**(0.4_dbl*d(:,3))-1.0_dbl)
     ELSE IF(WEIGHTED < 0) THEN
       ! Default errors in magnitude space, sigma~DEFAULT_MAG_ERROR
-      x = (10.0_dbl**(0.4_dbl*DEFAULT_MAG_ERROR)-1.0_dbl)
-      wvec(:) = 1.0_dbl/(yvec(:)*x)
+      wvec(:) = 1.0_dbl/(10.0_dbl**(0.4_dbl*DEFAULT_MAG_ERROR)-1.0_dbl)
     ELSE
       ! Constant error in magnitude space, given by user
-      x = (10.0_dbl**(0.4_dbl*WEIGHTED)-1.0_dbl)
-      wvec(:) = 1.0_dbl/(yvec(:)*x)
+      wvec(:) = 1.0_dbl/(10.0_dbl**(0.4_dbl*WEIGHTED)-1.0_dbl)
     END IF
   END IF
+  
+#if DB_LEVEL > 1
+  IF(PRESENT(WEIGHTED)) THEN
+    WRITE(*,*) ""
+    WRITE(*,*) "DB:: fit_HG1G2: weights"
+    WRITE(*,*) wvec(:)/yvec(:)
+  END IF
+#endif /* DB_LEVEL */
 
   n = SIZE(d,1)
   DO i=1,n
@@ -326,12 +342,24 @@ FUNCTION fit_HG1G2(d, DEGR, WEIGHTED, RMS, COVMAT, OP_STAT) RESULT(params)
     END IF      
   END DO
 
+  ! Now include y to weights to Amat
   IF(PRESENT(WEIGHTED)) THEN
     DO i=1,n
-      Amat(i,:) = wvec(i) * Amat(i,:)
-      yvec(i) = wvec(i) * yvec(i)
+      Amat(i,:) = wvec(i) * Amat(i,:) / yvec(i)
+      yvec(i) = wvec(i)
     END DO
   END IF
+  
+#if DB_LEVEL > 1
+  WRITE(*,*) ""
+  WRITE(*,*) "DB:: fit_HG1G2: y-values"
+  WRITE(*,*) yvec(:)
+  WRITE(*,*) ""
+  WRITE(*,*) "DB:: fit_HG1G2: A-matrix"
+  DO i=1,n
+    WRITE(*,*) Amat(i,:)
+  END DO
+#endif /* DB_LEVEL */
   
   CALL least_squares(Amat, yvec, as, Cmat)
   IF(statcode /= 0) THEN
@@ -346,7 +374,10 @@ FUNCTION fit_HG1G2(d, DEGR, WEIGHTED, RMS, COVMAT, OP_STAT) RESULT(params)
   IF(PRESENT(RMS) .OR. PRESENT(COVMAT)) THEN
     resvar(:) = residual_variance(Amat, yvec, as)
     IF(PRESENT(RMS)) RMS = SQRT(resvar(2))
-    IF(PRESENT(COVMAT)) COVMAT(:,:) = Cmat(:,:)
+    IF(PRESENT(COVMAT)) THEN
+      COVMAT(:,:) = Cmat(:,:)
+      IF(.NOT. PRESENT(WEIGHTED)) COVMAT(:,:) = resvar(1)*COVMAT(:,:)
+    END IF
   END IF
 
   params(:) = a1a2a3_to_HG1G2(as)
@@ -396,22 +427,29 @@ FUNCTION fit_HG12(d, DEGR, WEIGHTED, RMS, COVMAT, OP_STAT) RESULT(params)
   END IF
 
   yvec(:) = 10.0_dbl**(-0.4_dbl * d(:,2))
-  
+
+  ! Weights still without y at this point  
   IF(PRESENT(WEIGHTED)) THEN
     IF(SIZE(d,2) == 3) THEN
       ! If data includes errors in magnitude space, always use these.
       ! Change to flux space
-      wvec(:) = yvec(:)*(10**(0.4_dbl*d(:,3))-1.0_dbl)
+      wvec(:) = (10**(0.4_dbl*d(:,3))-1.0_dbl)
     ELSE IF(WEIGHTED < 0) THEN
       ! Default errors in magnitude space, sigma~DEFAULT_MAG_ERROR
-      x = (10.0_dbl**(0.4_dbl*DEFAULT_MAG_ERROR)-1.0_dbl)
-      wvec(:) = 1.0_dbl/(yvec(:)*x)
+      wvec(:) = 1.0_dbl/(10.0_dbl**(0.4_dbl*DEFAULT_MAG_ERROR)-1.0_dbl)
     ELSE
       ! Constant error in magnitude space, given by user
-      x = (10.0_dbl**(0.4_dbl*WEIGHTED)-1.0_dbl)
-      wvec(:) = 1.0_dbl/(yvec(:)*x)
+      wvec(:) = 1.0_dbl/(10.0_dbl**(0.4_dbl*WEIGHTED)-1.0_dbl)
     END IF
   END IF
+  
+#if DB_LEVEL > 1
+  IF(PRESENT(WEIGHTED)) THEN
+    WRITE(*,*) ""
+    WRITE(*,*) "DB:: fit_HG12: weights"
+    WRITE(*,*) wvec(:)/yvec(:)
+  END IF
+#endif /* DB_LEVEL */
 
   n = SIZE(d,1)
   DO i=1,n
@@ -448,13 +486,29 @@ FUNCTION fit_HG12(d, DEGR, WEIGHTED, RMS, COVMAT, OP_STAT) RESULT(params)
     Amat_large(i,2) = coef_G1_large*b1 + coef_G2_large*b2 - (coef_G1_large+coef_G2_large)*b3
   END DO
 
+  ! Now include y to weights to Amat's
   IF(PRESENT(WEIGHTED)) THEN
     DO i=1,n
-      Amat_small(i,:) = wvec(i) * Amat_small(i,:)
-      Amat_large(i,:) = wvec(i) * Amat_large(i,:)
-      yvec(i) = wvec(i) * yvec(i)
+      Amat_small(i,:) = wvec(i) * Amat_small(i,:) / yvec(i)
+      Amat_large(i,:) = wvec(i) * Amat_large(i,:) / yvec(i)
+      yvec(i) = wvec(i)
     END DO
   END IF
+  
+#if DB_LEVEL > 1
+  WRITE(*,*) ""
+  WRITE(*,*) "DB:: fit_HG12: y-values"
+  WRITE(*,*) yvec(:)
+  WRITE(*,*) ""
+  WRITE(*,*) "DB:: fit_HG12: A-matrix-small"
+  DO i=1,n
+    WRITE(*,*) Amat_small(i,:)
+  END DO
+    WRITE(*,*) "DB:: fit_HG12: A-matrix-large"
+  DO i=1,n
+    WRITE(*,*) Amat_large(i,:)
+  END DO
+#endif /* DB_LEVEL */
   
   CALL least_squares2(Amat_small, yvec, as_small, Cmat_small)
   IF(statcode /= 0) THEN
@@ -491,7 +545,10 @@ FUNCTION fit_HG12(d, DEGR, WEIGHTED, RMS, COVMAT, OP_STAT) RESULT(params)
   
   IF(PRESENT(RMS) .OR. PRESENT(COVMAT)) THEN
     IF(PRESENT(RMS)) RMS = SQRT(resvar(2))
-    IF(PRESENT(COVMAT)) COVMAT(:,:) = Cmat(:,:)
+    IF(PRESENT(COVMAT)) THEN
+      COVMAT(:,:) = Cmat(:,:)
+      IF(.NOT. PRESENT(WEIGHTED)) COVMAT(:,:) = resvar(1)*COVMAT(:,:)
+    END IF
   END IF
   
   IF(PRESENT(OP_STAT)) OP_STAT = 0
@@ -718,6 +775,12 @@ FUNCTION residual_variance(Amat, yvec, as) RESULT(rv)
   END DO
   rv(1) = rv(1)/(n-k)
   rv(2) = 6.25_dbl*rv(2)/(n-k)
+  
+#if DB_LEVEL > 0
+  WRITE(*,*) ""
+  WRITE(*,*) "DB:: residual_variance: mean-square-errors in flux and magnitude space"
+  WRITE(*,*) rv(:)
+#endif /* DB_LEVEL */
 
 END FUNCTION residual_variance
 
@@ -853,6 +916,17 @@ SUBROUTINE least_squares(Amat, yvec, as, Cmat)
       as(k) = as(k) + x*yvec(i)
     END DO
   END DO
+  
+#if DB_LEVEL > 0
+  WRITE(*,*) ""
+  WRITE(*,*) "DB:: least_squares: linear best-fit parameters"
+  WRITE(*,*) as(:)
+   WRITE(*,*) ""
+  WRITE(*,*) "DB:: least_squares: covariance matrix" 
+  DO k=1,3
+    WRITE(*,*) Cmat(k,:)
+  END DO
+#endif /* DB_LEVEL */
 
 END SUBROUTINE least_squares
 
@@ -906,13 +980,23 @@ SUBROUTINE least_squares2(Amat, yvec, as, Cmat)
       as(k) = as(k) + x*yvec(i)
     END DO
   END DO
+  
+#if DB_LEVEL > 0
+  WRITE(*,*) ""
+  WRITE(*,*) "DB:: least_squares2: linear best-fit parameters"
+  WRITE(*,*) as(:)
+   WRITE(*,*) ""
+  WRITE(*,*) "DB:: least_squares2: covariance matrix" 
+  DO k=1,2
+    WRITE(*,*) Cmat(k,:)
+  END DO
+#endif /* DB_LEVEL */
 
 END SUBROUTINE least_squares2
 
 ! !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-! Spline coefficients from system A.coefs=r, where A is tri-diagonal.
+! Spline derivatives from system A.derivs=r, where A is tri-diagonal.
 ! Tri-diagonal matrix solver adapted from Numerical Recipies.
-! Note, dim(xval,yval)=n, but dim(spline coefs)=n-1
 SUBROUTINE spline_coefs(xval, yval, deriv, base_i, func_i)
   IMPLICIT NONE
   REAL(dbl), DIMENSION(:), INTENT(IN) :: xval, yval
@@ -921,26 +1005,36 @@ SUBROUTINE spline_coefs(xval, yval, deriv, base_i, func_i)
   
   INTEGER :: i, j, n
   REAL(dbl) :: bet
-  REAL(dbl), DIMENSION(SIZE(xval,1)) :: a, b, c, d, r, gam, u
+  REAL(dbl), DIMENSION(SIZE(xval,1)) :: a, b, c, r, gam, u
   
   n = SIZE(xval,1)
   
   ! Spline system matrix A coefficients
-  a(:) = 1.0_dbl
+
   a(1) = 0.0_dbl
+  DO i=2,n-1
+    a(i) = 1.0_dbl/(xval(i)-xval(i-1))
+  END DO
   a(n) = 0.0_dbl
-  b(:) = 4.0_dbl
+  
   b(1) = 1.0_dbl
+  DO i=2,n-1
+    b(i) = 2.0_dbl/(xval(i)-xval(i-1)) + 2.0_dbl/(xval(i+1)-xval(i))
+  END DO
   b(n) = 1.0_dbl
-  c(:) = 1.0_dbl
+  
   c(1) = 0.0_dbl
+  DO i=2,n-1
+    c(i) = 1.0_dbl/(xval(i+1)-xval(i))
+  END DO
   c(n) = 0.0_dbl
   
-  r(1) = deriv(1)*(xval(2)-xval(1))
+  r(1) = deriv(1)
   DO i=2,n-1
-    r(i) = 3.0_dbl * (yval(i+1)-yval(i-1))
+    r(i) = 3.0_dbl * ((yval(i)-yval(i-1))/((xval(i)-xval(i-1))**2) + &
+      (yval(i+1)-yval(i))/((xval(i+1)-xval(i))**2))
   END DO
-  r(n) = deriv(2)*(xval(n)-xval(n-1))
+  r(n) = deriv(2)
   
   ! Tri-diagonal solver
   bet=b(1)
@@ -955,15 +1049,13 @@ SUBROUTINE spline_coefs(xval, yval, deriv, base_i, func_i)
     u(i)=u(i)-gam(i+1)*u(i+1)
   END DO
   
-  ! System solved, convert to spline coefficients (a,b,c,d), when
-  ! spline is y(t) = a + b*t + c*t^2 + d*t^3
-  base(base_i)%funcs(func_i)%spline%knots(:) = xval(:)
-  base(base_i)%funcs(func_i)%spline%coef(:,1) = yval(1:n-1)
-  base(base_i)%funcs(func_i)%spline%coef(:,2) = u(1:n-1)
-  DO i=1,n-1
-    base(base_i)%funcs(func_i)%spline%coef(i,3) = 3.0_dbl*(yval(i+1)-yval(i)) - 2.0_dbl*u(i) - u(i+1)
-    base(base_i)%funcs(func_i)%spline%coef(i,4) = 2.0_dbl*(yval(i)-yval(i+1)) + u(i) + u(i+1)
-  END DO
+  ! System solved, spline between knots i and i+1 with derivatives d(i) and d(i+1) is
+  ! y(x) = (1-t) y(i) + t y(i+1) + t (1-t) (a (1-t) + b t), where
+  ! t = (x-x(i))/(x(i+1)-x(i)), a = d(i)*(x(i+1)-x(i)) - (y(i+1)-y(i)), and
+  ! b = -d(i+1)*(x(i+1)-x(i)) + (y(i+1)-y(i))
+  base(base_i)%funcs(func_i)%spline%knots(:,1) = xval(:)
+  base(base_i)%funcs(func_i)%spline%knots(:,2) = yval(:)
+  base(base_i)%funcs(func_i)%spline%derivs(:) = u(:)
 
 END SUBROUTINE spline_coefs
 
@@ -977,7 +1069,7 @@ FUNCTION get_value(x, base_i, op_code) RESULT(y)
   REAL(dbl) :: y
   
   INTEGER :: i, j
-  REAL(dbl) :: t
+  REAL(dbl) :: t, xd, yd, a, b, y1, y2, x1, x2, d1, d2
   
   IF(x < base(base_i)%low_limit) THEN
     last_error%code = ECODE_BELOW_RANGE
@@ -1004,12 +1096,20 @@ FUNCTION get_value(x, base_i, op_code) RESULT(y)
   CASE(func_type_spline)
     ! Find right interval
     DO j=1,base(base_i)%funcs(i)%spline%n_knots-1
-      IF(base(base_i)%funcs(i)%spline%knots(j) <= x .AND. x <= base(base_i)%funcs(i)%spline%knots(j+1)) EXIT
+      IF(base(base_i)%funcs(i)%spline%knots(j,1) <= x .AND. x <= base(base_i)%funcs(i)%spline%knots(j+1,1)) EXIT
     END DO
-    t = (x - base(base_i)%funcs(i)%spline%knots(j)) / &
-      (base(base_i)%funcs(i)%spline%knots(j+1)-base(base_i)%funcs(i)%spline%knots(j))
-    y = base(base_i)%funcs(i)%spline%coef(j,1) + base(base_i)%funcs(i)%spline%coef(j,2)*t + &
-      base(base_i)%funcs(i)%spline%coef(j,3)*t**2 + base(base_i)%funcs(i)%spline%coef(j,4)*t**3
+    x1 = base(base_i)%funcs(i)%spline%knots(j,1)
+    x2 = base(base_i)%funcs(i)%spline%knots(j+1,1)
+    y1 = base(base_i)%funcs(i)%spline%knots(j,2)
+    y2 = base(base_i)%funcs(i)%spline%knots(j+1,2)
+    d1 = base(base_i)%funcs(i)%spline%derivs(j)
+    d2 = base(base_i)%funcs(i)%spline%derivs(j+1)
+    xd = x2-x1
+    yd = y2-y1
+    a = d1*xd - yd
+    b = -d2*xd + yd
+    t = (x-x1)/xd
+    y = (1-t)*y1 + t*y2 + t*(1-t)*(a*(1-t)+b*t)
   END SELECT
   
   op_code = 0
