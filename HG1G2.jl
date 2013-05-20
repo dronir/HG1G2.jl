@@ -8,8 +8,8 @@ export BasisFunctions
 export form_base, fit_HG1G2, fitted_curve
 
 # Radian and degree conversion functions
-rad{T<:Real}(x::Union(T,Array{T})) = 0.0174532925199433.*x
-deg{T<:Real}(x::Union(T,Array{T})) = 57.2957795130823.*x
+rad{T<:Real}(x::Union(T,Array{T})) = 0.017453292519943295.*x
+deg{T<:Real}(x::Union(T,Array{T})) = 57.29577951308232.*x
 
 type BasisFunctions
     funcs::Array{PiecewiseFunction}
@@ -30,10 +30,10 @@ function form_base()
     
     # Construct spline part of a1
     xvalues = rad([7.5, 30, 60, 90, 120, 150])
-    yvalues = [0.75,0.33486,0.134106,0.0511048,0.0214657,0.0036397]
+    yvalues = [0.75, 0.33486, 0.134106, 0.0511048, 0.0214657, 0.0036397]
     deriv = [-1.90986, -0.0913286]
     S1 = Spline(xvalues, yvalues, deriv)
-    a1_spline(x::Real) = SplineFunction(x, S1)
+    a1_spline(x::Real) = SplineFunction(S1, x)
 
     basis_functions[1] = PiecewiseFunction()
     add_component!(basis_functions[1], a1_linear, 0.0, rad(7.5))
@@ -47,7 +47,7 @@ function form_base()
     yvalues = [0.925,0.628842,0.317555,0.127164,0.0223739,0.000165057]
     deriv = [-0.572958, -8.6573138e-8]
     S2 = Spline(xvalues, yvalues, deriv)
-    a2_spline(x::Real) = SplineFunction(x, S2)
+    a2_spline(x::Real) = SplineFunction(S2, x)
 
     basis_functions[2] = PiecewiseFunction()
     add_component!(basis_functions[2], a2_linear, 0.0, rad(7.5))
@@ -62,12 +62,8 @@ function form_base()
     yvalues = [1.,0.833812,0.577354,0.421448,0.231742,0.103482,0.0617335,0.016107,0.0]
     deriv = [-0.106301, 0.0]
     S3 = Spline(xvalues, yvalues, deriv)
-    a3_spline(x::Real) = SplineFunction(x, S3)
-    
-    println(S1)
-    println(S2)
-    println(S3)
-    
+    a3_spline(x::Real) = SplineFunction(S3, x)
+        
     basis_functions[3] = PiecewiseFunction()
     add_component!(basis_functions[3], a3_spline, 0.0, rad(30))
     add_component!(basis_functions[3], a3_constant, rad(30), rad(150))
@@ -77,25 +73,26 @@ end
 
 function fit_HG1G2{T<:Real}(basis::BasisFunctions, data::Matrix{T}, errors::Vector{T})
     Ndata = size(data,1)
-    xvalues = vec(data[:,1])
+    xvalues = vec(data[:,1]) * pi/180
     yvalues = 10 .^(-0.4 * vec(data[:,2]))
     
-    x = 10.^(0.4 * errors) - 1
-    W = 1 / (yvalues .* x)
+    sigmas = yvalues .* (10.^(0.4 * errors) - 1)
     
     Nfuncs = size(basis.funcs,1)
-    Xmatrix = zeros(Ndata, Nfuncs)
+    Amatrix = zeros(Ndata, Nfuncs)
     for i = 1:Ndata
         for j = 1:Nfuncs
-            Xmatrix[i,j] = get_value(basis.funcs[j], xvalues[i]) * W[i]
+            Amatrix[i,j] = get_value(basis.funcs[j], xvalues[i]) / sigmas[i]
         end
     end
     
-    as = Xmatrix \ (yvalues .* W)
-    return a1a2a3_to_HG1G2(as)
+    yvalues = 1/(10.^(0.4 * errors) - 1)
+
+    as = Amatrix \ yvalues
+    return a1a2a3_to_HG1G2(vec(as))
 end
 
-fit_HG1G2{T<:Real}(basis::Vector{PiecewiseFunction}, data::Matrix{T}) = fit_HG1G2(basis,data,0.03*ones(size(data,1)))
+fit_HG1G2{T<:Real}(basis::BasisFunctions, data::Matrix{T}) = fit_HG1G2(basis,data,0.03*ones(size(data,1)))
 
 
 function fitted_curve(T, params, basis)
